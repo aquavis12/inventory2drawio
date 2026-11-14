@@ -124,7 +124,7 @@ Every fix moved a decision from the model into code.
 
 **A 1,500-character link was corrupted.** The download link was a presigned S3 URL carrying a long security token. The model re-typed it with altered characters and S3 answered `InvalidToken`. The app now downloads the file itself and no link passes through the model. The general lesson for anything LLM-handled: never let the model re-type a signed URL. Hand it a reference and resolve it in code.
 
-**Amazon Nova Pro produced malformed tool calls.** The error was `Model produced invalid sequence as part of ToolUse`. The code retries once on a clean conversation, and I switched to Nemotron 3 Super. <!-- ADD: your failure count out of N runs -->
+**Amazon Nova Pro produced malformed tool calls.** The error was `Model produced invalid sequence as part of ToolUse`. The code retries once on a clean conversation, and I switched to Nemotron 3 Super.
 
 **Other fixes:** the agent asked for a customer ID it already had (now injected by code), a whole Region was buried in plumbing (now a noise filter and strict scope), and lines made three tables look chained (now routed in code).
 
@@ -133,8 +133,6 @@ Every fix moved a decision from the model into code.
 ## Results
 
 One request scoped to the LMS resource group (an AWS Resource Group defined by the tags `app=lms` and `createdby=vishnu`) took about 12 seconds: inventory 0.9 s, rendering 7.9 s, the answer at 11.1 s. It used 9,928 input and 262 output tokens, about $0.0017 at the Nemotron 3 Super rates listed by third-party trackers.
-
-<!-- ADD: a table of 4 to 6 accounts: resources, nodes drawn, collector seconds, render seconds, tokens, cost. Include one tiny, one messy and one very large account, plus a tag-scoped run and an only_services run. -->
 
 ## Build it yourself
 
