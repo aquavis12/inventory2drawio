@@ -82,7 +82,8 @@ def lambda_handler(event, context):
         return {"ok": False, "error": "customer_id is required"}
 
     include = [x for x in (event.get("include_services") or []) if isinstance(x, str)][:20]
-    graph = collect(session, tag, vpc_ids, group, include, event.get("include_connected") is True)
+    only = [x.strip().lower() for x in (event.get("only_services") or []) if isinstance(x, str) and x.strip()][:20]
+    graph = collect(session, tag, vpc_ids, group, include, event.get("include_connected") is True, only)
     graph["region"] = region
     graph["customer"] = {"id": customer_id or "own-account",
                          "name": (profile or {}).get("name") or customer_id or "This account"}
@@ -101,7 +102,8 @@ def lambda_handler(event, context):
                 **({"default_vpc": True} if n.get("is_default") else {}),
                 **({"service": n["service"]} if n.get("service") else {})} for n in graph["nodes"]]
     return {"ok": True, "graph_s3_uri": f"s3://{bucket}/{key}", "customer": graph["customer"],
-            "region": region, "summary": graph["summary"], "notes": graph["notes"], "nodes": compact}
+            "region": region, "summary": graph["summary"], "notes": graph["notes"],
+            "findings": graph.get("findings", []), "nodes": compact}
 
 
 def _optional(notes, what, call, default):
@@ -125,7 +127,7 @@ def _name(tags, fallback):
 
 
 def collect(session, tag_filter=None, vpc_filter=None, group_filter=None, include_services=None,
-            include_connected=False):
+            include_connected=False, only_services=None):
     ec2 = session.client("ec2", config=BOTO_CFG)
     region = session.region_name
     account = session.client("sts", config=BOTO_CFG).get_caller_identity()["Account"]
@@ -423,7 +425,8 @@ def collect(session, tag_filter=None, vpc_filter=None, group_filter=None, includ
     except Exception as err:
         notes.append(f"Route 53 skipped: {type(err).__name__}")
 
-    discover(session, region, nodes, notes, include_services)
+    if not only_services or _only_types(only_services)[1]:
+        discover(session, region, nodes, notes, include_services)
 
     # AWS Resource Groups: remember which group each resource belongs to.
     for n in nodes.values():
@@ -474,7 +477,8 @@ def collect(session, tag_filter=None, vpc_filter=None, group_filter=None, includ
         if m:
             e["from"] = f"dynamodb:{m[1]}"
 
-    return _finish(nodes, edges, notes, tag_filter, vpc_filter, group_filter, include_connected)
+    return _finish(nodes, edges, notes, tag_filter, vpc_filter, group_filter, include_connected,
+                   only_services)
 
 
 def assign_groups(nodes, members):
@@ -737,8 +741,69 @@ def discover(session, region, nodes, notes, include_services=None):
     return added
 
 
-def _finish(nodes, edges, notes, tag_filter, vpc_filter, group_filter=None, include_connected=False):
+# Service name -> node types the dedicated collectors produce for it.
+SERVICE_TYPES = {
+    "s3": {"s3_bucket"}, "lambda": {"lambda_function"}, "dynamodb": {"dynamodb_table"},
+    "sqs": {"sqs_queue"}, "sns": {"sns_topic"}, "cognito": {"cognito_user_pool"},
+    "cognito-idp": {"cognito_user_pool"}, "acm": {"acm_certificate"},
+    "cloudfront": {"cloudfront_distribution"}, "route53": {"route53_zone"},
+    "apigateway": {"api_gateway"}, "elasticloadbalancing": {"load_balancer"},
+    "elbv2": {"load_balancer"}, "rds": {"rds_instance"},
+    "ec2": {"ec2_instance", "vpc", "subnet", "internet_gateway", "nat_gateway"},
+}
+
+
+def _only_types(only_services):
+    """Return (node types to keep, services that need Resource Explorer discovery)."""
+    types, discovered = set(), set()
+    for s in only_services:
+        if s in SERVICE_TYPES:
+            types |= SERVICE_TYPES[s]
+        else:
+            discovered.add(s)
+    return types, discovered
+
+
+def _findings(kept, edges, partial=False):
+    """Facts the inventory itself supports, worth a second look. Computed here, in code, so
+    they are the same on every run; the model only words them. Capped to stay readable."""
+    out = []   # partial: a scope hid neighbours, so "no connections" or "no NAT" could be wrong
+    nodes = list(kept.values())
+    linked = {e["from"] for e in edges} | {e["to"] for e in edges}
+
+    def add(node, text):
+        out.append({"id": node["id"], "name": node["name"], "text": text})
+
+    for n in nodes:
+        t = n["type"]
+        if t == "rds_instance" and n.get("multi_az") is False:
+            add(n, f"Database {n['name']} runs in one Availability Zone (Multi-AZ is off).")
+        elif t == "ec2_instance" and n.get("subnet") in kept and kept[n["subnet"]].get("public"):
+            add(n, f"Instance {n['name']} is in a public subnet.")
+        elif t == "acm_certificate" and "issued" not in (n.get("detail") or "issued"):
+            add(n, f"Certificate {n['name']} is not issued yet ({n['detail']}).")
+        elif t == "subnet" and "public" in n["name"].lower() and not n.get("public"):
+            add(n, f"Subnet {n['name']} is named public but has no route to an internet gateway.")
+        elif (not partial and t in ("lambda_function", "sqs_queue", "sns_topic", "api_gateway")
+              and n["id"] not in linked):
+            add(n, f"{n['name']} has no connections in the inventory.")
+    nat_vpcs = {n.get("vpc") for n in nodes if n["type"] == "nat_gateway"}
+    for n in nodes:
+        if not partial and n["type"] == "subnet" and not n.get("public") and n.get("vpc") not in nat_vpcs \
+                and "public" not in n["name"].lower():
+            add(n, f"Private subnet {n['name']} has no NAT gateway in its VPC.")
+    return out[:8]
+
+
+def _finish(nodes, edges, notes, tag_filter, vpc_filter, group_filter=None, include_connected=False,
+            only_services=None):
     containers = {"vpc", "subnet"}
+    if only_services:
+        want_types, want_other = _only_types(only_services)
+        nodes = {i: n for i, n in nodes.items()
+                 if n["type"] in want_types
+                 or (n["type"] == "other" and (n.get("service") or "").lower() in want_other)}
+        edges = [e for e in edges if e["from"] in nodes and e["to"] in nodes]
 
     def keep_by_filters(n):
         if vpc_filter and n.get("vpc") not in vpc_filter and n["id"] not in vpc_filter:
@@ -754,7 +819,7 @@ def _finish(nodes, edges, notes, tag_filter, vpc_filter, group_filter=None, incl
         return True
 
     kept = {i: n for i, n in nodes.items() if keep_by_filters(n)}
-    if (tag_filter or group_filter) and not include_connected:
+    if (tag_filter or group_filter) and not include_connected and not only_services:
         # Strict by default: only resources that carry the tag (or are in the group), plus
         # the VPC and subnet boxes they sit in. Say what was left out, never add it silently.
         matched = set(kept)
@@ -798,6 +863,8 @@ def _finish(nodes, edges, notes, tag_filter, vpc_filter, group_filter=None, incl
     for n in kept.values():
         by_type[n["type"]] = by_type.get(n["type"], 0) + 1
     return {"nodes": list(kept.values()), "edges": kept_edges, "notes": notes,
+            "findings": _findings(kept, kept_edges, partial=bool(only_services) or bool(
+                (tag_filter or group_filter) and not include_connected)),
             "summary": {"nodes": len(kept), "edges": len(kept_edges),
                         "truncated": truncated, "by_type": dict(sorted(by_type.items()))}}
 

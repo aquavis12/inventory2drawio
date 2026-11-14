@@ -29,6 +29,12 @@ TEMPLATES = [
      "prompt": "Draw the application{scope}, and include the untagged resources directly "
                "connected to it.",
      "needs": "scope"},
+    {"label": "Only some services",
+     "prompt": "Draw only the S3 buckets{scope}. Nothing else.",
+     "needs": None},
+    {"label": "Only some services",
+     "prompt": "Draw only the S3 buckets{scope}. Nothing else.",
+     "needs": None},
     {"label": "Include routine services",
      "prompt": "Draw the application{scope}, and include KMS keys, log groups and SSM "
                "parameters this time.",

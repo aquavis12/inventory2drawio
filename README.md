@@ -16,7 +16,6 @@ In a real run: about 12 seconds per diagram, under a fifth of a cent in model co
 | `tools/collect_inventory/` | Lambda behind AgentCore Gateway. Read-only. Finds resources (Resource Explorer if on, otherwise Cloud Control and the tagging API), adds connections, leaves out plumbing, scopes strictly |
 | `tools/render_drawio/` | Lambda behind AgentCore Gateway. Lays out Region, VPC, AZ, subnets and a left-to-right flow with official AWS icons. Draws links from the flow file only between resources that exist |
 | `customers/` | Per-customer `profile.json` (access, read by the Lambda only) and `skill.md` (guidance for the agent), plus a CloudFormation template for the read-only role in each customer account |
-| `policies/`, `scripts/` | Optional: AgentCore Web Search limited to AWS documentation, and Cedar policies for the Gateway |
 
 The rule behind the design: **code decides, the model explains.** Inventory, layout,
 customer and Region, download links and flow links are all handled in code; the model
@@ -47,10 +46,11 @@ picks the scope and explains the result.
    for t in tests/test_*.py; do python "$t"; done
    ```
 
-   `tests/test_flow.py`, `test_fixed_args.py` and `test_scripts.py` also need the packages in
-   `agent/requirements.txt`.
+   `tests/test_flow.py` and `test_fixed_args.py` also need the packages in
+   `agent/requirements.txt`. On Windows, install into a short path (for example
+   `python -m venv C:\v`) so moto's deep file paths don't hit the path-length limit.
 
-2. Open `samples/orders_scoped.drawio` at [app.diagrams.net](https://app.diagrams.net) to see
+2. Open `samples/lms_shaped.drawio` at [app.diagrams.net](https://app.diagrams.net) to see
    the output format.
 
 3. Deploy by following **[SETUP.md](SETUP.md)**: a work bucket, two Lambda functions, an
@@ -64,7 +64,7 @@ picks the scope and explains the result.
 ## Getting good diagrams
 
 - Tag your workloads (`app=lms`) or put them in a resource group.
-- Describe the request flow once in Markdown (`samples/lms_flow_example.md`) and reuse it.
+- Describe the request flow once in Markdown (for example "1. The site sends results to the API.") and reuse it.
 - Expect a small touch-up in draw.io: it's a real, editable file.
 - Ask precisely, or start from a template.
 

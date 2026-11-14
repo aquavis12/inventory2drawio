@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 rm -rf build/agentpkg && mkdir -p build/agentpkg
 python -m pip install --platform manylinux2014_aarch64 --implementation cp \
   --python-version 3.12 --only-binary=:all: --target build/agentpkg -r agent/requirements.txt
-cp agent/agent.py build/agentpkg/
+cp agent/agent.py agent/intent.py build/agentpkg/
 find build/agentpkg -name __pycache__ -type d -prune -exec rm -rf {} +
 python - <<'PY'
 import os, zipfile

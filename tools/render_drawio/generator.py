@@ -4,6 +4,8 @@ Layout is code, not LLM: models are bad at coordinates and produce overlapping
 boxes. Nesting: AWS Cloud > Region > VPC > Availability Zone > subnet > resources.
 Regional services (S3, DynamoDB, SQS, Lambda outside a VPC) sit in a row below.
 """
+import bisect
+import heapq
 from xml.sax.saxutils import escape
 
 CELL_W, CELL_H = 170, 120       # one icon plus its two-line label
@@ -86,6 +88,7 @@ GROUPS = {
 _BOX = ("container=1;collapsible=0;recursiveResize=0;html=1;whiteSpace=wrap;verticalAlign=top;"
         "align=left;spacingLeft=10;spacingTop=4;fontSize=12;fillColor=none;")
 GROUPS["resource_group"] = _BOX + "strokeColor=#5A6C86;fontColor=#5A6C86;dashed=1;"
+GROUPS["connected"] = _BOX + "strokeColor=#B0B7C0;fontColor=#879196;dashed=1;dashPattern=2 4;"
 GROUPS["global"] = _BOX + "strokeColor=#879196;fontColor=#232F3E;dashed=0;fontStyle=1;"
 EDGE_DESCRIBED = ("edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArrow=block;"
                   "endFill=1;strokeColor=#147EBA;dashed=1;fontSize=10;fontColor=#147EBA;"
@@ -96,9 +99,147 @@ EDGE = ("edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;html=1;endArro
         "endFill=1;strokeColor=#545B64;fontSize=10;")
 
 
+HALF_W = 70          # an icon plus its label blocks this far left and right of its centre
+LABEL_H = 44         # and this far below the icon
+LANE = 5             # lines run this far outside an icon's blocked area
+BEND_COST = 40
+MAX_ROUTED_ICONS = 70
+
+
+def _route_edges(icons, pairs):
+    """Orthogonal routes that go around icons and labels instead of through them.
+
+    icons: {node id: (x, y)} top-left corners of the ICON x ICON squares, absolute.
+    pairs: [(from id, to id)]. Returns {(from, to): [(x, y) corner points]} for the edges it
+    could route; an edge missing from the result keeps draw.io's automatic routing. Lines
+    leave one side of an icon, run along free lanes between icons and rows, and enter the
+    side facing the source. Pure geometry: no AWS, no model."""
+    if not pairs or len(icons) > MAX_ROUTED_ICONS:
+        return {}
+    c = ICON / 2
+    obs = {k: (x + c - HALF_W, y - 2, x + c + HALF_W, y + ICON + LABEL_H) for k, (x, y) in icons.items()}
+    cen = {k: (x + c, y + c) for k, (x, y) in icons.items()}
+    xs_, ys_ = set(), set()
+    for k, (x0, y0, x1, y1) in obs.items():
+        cx, cy = cen[k]
+        xs_.update((x0 - LANE, x1 + LANE, cx - c, cx + c))
+        ys_.update((y0 - LANE, y1 + LANE, cy))
+    xs_.update((min(v[0] for v in obs.values()) - 40, max(v[2] for v in obs.values()) + 40))
+    ys_.update((min(v[1] for v in obs.values()) - 40, max(v[3] for v in obs.values()) + 40))
+    xs, ys = sorted({round(v) for v in xs_}), sorted({round(v) for v in ys_})
+    xi, yi = {v: i for i, v in enumerate(xs)}, {v: i for i, v in enumerate(ys)}
+
+    hb, vb = {}, {}     # segment -> icons it would cross
+    for k, (x0, y0, x1, y1) in obs.items():
+        i0, i1 = max(0, bisect.bisect_right(xs, x0) - 1), bisect.bisect_left(xs, x1)
+        j0, j1 = max(0, bisect.bisect_right(ys, y0) - 1), bisect.bisect_left(ys, y1)
+        for j in range(bisect.bisect_right(ys, y0), bisect.bisect_left(ys, y1)):
+            for i in range(i0, i1):
+                hb.setdefault((j, i), set()).add(k)
+        for i in range(bisect.bisect_right(xs, x0), bisect.bisect_left(xs, x1)):
+            for j in range(j0, j1):
+                vb.setdefault((i, j), set()).add(k)
+
+    DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))     # right, left, down, up
+
+    def route(a, b):
+        (ax, ay), (bx, by) = cen[a], cen[b]
+        if bx > ax + 1:
+            out_d, in_d = 0, 0           # leave right, enter the target's left side
+        elif bx < ax - 1:
+            out_d, in_d = 1, 1
+        else:
+            out_d, in_d = 0, 1           # same column: leave right, come back into the right side
+        sx = ax + (c if out_d == 0 else -c)
+        gx = bx + (-c if in_d == 0 else c)
+        start, goal = (xi[round(sx)], yi[round(ay)]), (xi[round(gx)], yi[round(by)])
+
+        def blocked(seg_set, horizontal, lane_y):
+            for k in seg_set:
+                if k != a and k != b:
+                    return True
+                if not (horizontal and round(cen[k][1]) == lane_y):
+                    return True       # own icon: only the straight exit/entry lane is free
+            return False
+
+        h = lambda i, j: abs(xs[i] - xs[goal[0]]) + abs(ys[j] - ys[goal[1]])
+        best = {(start, out_d): 0}
+        prev = {}
+        heap = [(h(*start), 0, start, out_d, True)]
+        end = None
+        while heap:
+            _, cost, (i, j), d, first = heapq.heappop(heap)
+            if best.get(((i, j), d), 1e18) < cost:
+                continue
+            if (i, j) == goal and d == in_d:
+                end = ((i, j), d)
+                break
+            for nd, (dx, dy) in enumerate(DIRS):
+                if first and nd != out_d:
+                    continue
+                if (dx, dy) == (-DIRS[d][0], -DIRS[d][1]):
+                    continue                      # no U-turns
+                ni, nj = i + dx, j + dy
+                if not (0 <= ni < len(xs) and 0 <= nj < len(ys)):
+                    continue
+                if (ni, nj) == goal and nd != in_d:
+                    continue
+                if dy == 0:
+                    seg = hb.get((j, min(i, ni)), ())
+                    if seg and blocked(seg, True, ys[j]):
+                        continue
+                    step = abs(xs[ni] - xs[i])
+                else:
+                    seg = vb.get((i, min(j, nj)), ())
+                    if seg and blocked(seg, False, 0):
+                        continue
+                    step = abs(ys[nj] - ys[j])
+                ncost = cost + step + (BEND_COST if (nd != d and not first) else 0)
+                key = ((ni, nj), nd)
+                if ncost < best.get(key, 1e18):
+                    best[key] = ncost
+                    prev[key] = ((i, j), d)
+                    heapq.heappush(heap, (ncost + h(ni, nj), ncost, (ni, nj), nd, False))
+        if end is None:
+            return None
+        path, key = [], end
+        while key in prev or key == (start, out_d):
+            path.append(key[0])
+            if key not in prev:
+                break
+            key = prev[key]
+        path.reverse()
+        pts = [(xs[i], ys[j]) for i, j in path]
+        corners = [p for n, p in enumerate(pts[1:-1], 1)
+                   if (pts[n - 1][0] == p[0]) != (pts[n + 1][0] == p[0])
+                   or (pts[n - 1][1] == p[1]) != (pts[n + 1][1] == p[1])]
+        return corners
+
+    out = {}
+    for a, b in pairs:
+        if a in icons and b in icons and a != b:
+            r = route(a, b)
+            if r is not None:
+                out[(a, b)] = r
+    return out
+
+
+def _points_xml(points):
+    if not points:
+        return ""
+    return ('<Array as="points">'
+            + "".join(f'<mxPoint x="{round(x)}" y="{round(y)}"/>' for x, y in points) + "</Array>")
+
+
+def _straight(style):
+    """Routed lines are drawn exactly through their points, so drop draw.io's own routing."""
+    return style.replace("edgeStyle=orthogonalEdgeStyle;", "").replace("orthogonalLoop=1;", "")
+
+
 class _Doc:
     def __init__(self):
         self.cells, self.ids = [], {}
+        self.abs, self.icons = {}, {}   # absolute positions, for routing lines around icons
 
     def cid(self, key):
         """Short, stable draw.io ids (ARNs are long and contain ':' and '/')."""
@@ -107,23 +248,39 @@ class _Doc:
         return self.ids[key]
 
     def vertex(self, key, label, style, parent, x, y, w, h):
+        bx, by = self.abs.get(parent, (0, 0))
+        self.abs[self.cid(key)] = (bx + x, by + y)
+        if w == ICON and h == ICON:
+            self.icons[key] = (bx + x, by + y)
         self.cells.append(
             f'<mxCell id="{self.cid(key)}" value="{escape(label, {chr(34): "&quot;"})}" '
             f'style="{style}" vertex="1" parent="{parent}">'
             f'<mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry"/></mxCell>')
         return self.cid(key)
 
-    def edge(self, src, dst, label="", style=None):
+    def edge(self, src, dst, label="", style=None, points=None):
         n = len(self.cells)
         self.cells.append(
             f'<mxCell id="e{n}" value="{escape(label or "", {chr(34): "&quot;"})}" style="{style or EDGE}" '
             f'edge="1" parent="1" source="{src}" target="{dst}">'
-            f'<mxGeometry relative="1" as="geometry"/></mxCell>')
+            f'<mxGeometry relative="1" as="geometry">{_points_xml(points)}</mxGeometry></mxCell>')
+
+
+def _wrap_name(name, width=24, limit=56):
+    """Long names break after a hyphen, dot or dash onto a second line instead of being cut
+    to '...'. Only names past `limit` characters are shortened."""
+    if len(name) > limit:
+        name = name[:limit - 3] + "..."
+    if len(name) <= width:
+        return name
+    cut = max((name.rfind(c, 0, width + 1) for c in "-._/"), default=-1)
+    cut = cut + 1 if cut >= width // 2 else width
+    return f"{name[:cut]}<br>{name[cut:]}"
 
 
 def _label(node):
     detail = node.get("detail")
-    name = node["name"] if len(node["name"]) <= 28 else node["name"][:25] + "..."
+    name = _wrap_name(node["name"])
     return f"{name}<br><font color=\"#545B64\">{detail}</font>" if detail else name
 
 
@@ -226,12 +383,22 @@ def _sorted(items):
     return sorted(items, key=lambda n: (rank.get(n["type"], 99), n["name"].lower()))
 
 
+CONNECTED = "\0connected"   # cluster key for resources outside the scope but wired to it
+
+
 def _clusters(items):
     """Resource-group members get a titled box each; the rest share an untitled grid."""
-    grouped, loose = {}, []
+    grouped, loose, connected = {}, [], []
     for n in items:
-        (grouped.setdefault(n["group"], []) if n.get("group") else loose).append(n)
+        if n.get("group"):
+            grouped.setdefault(n["group"], []).append(n)
+        elif n.get("included_because"):
+            connected.append(n)     # pulled in by a connection, not matched by the scope
+        else:
+            loose.append(n)
     out = [(name, _sorted(grouped[name])) for name in sorted(grouped)]
+    if connected:
+        out.append((CONNECTED, _sorted(connected)))
     if loose:
         out.append((None, _sorted(loose)))
     return out
@@ -254,8 +421,12 @@ def _flow(clusters, max_w):
 def _draw_flow(doc, parent, placed, x0, y0, scope):
     for title, items, x, y, w, h, cols in placed:
         if title:
-            box = doc.vertex(f"__rg:{scope}:{title}", f"Resource group: {title}",
-                             GROUPS["resource_group"], parent, x0 + x, y0 + y, w, h)
+            if title == CONNECTED:
+                box = doc.vertex(f"__rg:{scope}:connected", "Connected, not in scope (untagged)",
+                                 GROUPS["connected"], parent, x0 + x, y0 + y, w, h)
+            else:
+                box = doc.vertex(f"__rg:{scope}:{title}", f"Resource group: {title}",
+                                 GROUPS["resource_group"], parent, x0 + x, y0 + y, w, h)
             _place_flow(doc, box, items, PAD, HEADER)
         else:
             _place_flow(doc, parent, items, x0 + x, y0 + y)
@@ -370,15 +541,18 @@ def build_drawio(graph, title="AWS architecture", region="Region"):
             return "exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;"
         return ""
 
+    drawn = [e for e in graph.get("edges", []) if e["from"] in doc.ids and e["to"] in doc.ids]
+    routes = _route_edges(doc.icons, [(e["from"], e["to"]) for e in drawn])
     described = 0
-    for e in graph.get("edges", []):
-        if e["from"] in doc.ids and e["to"] in doc.ids:
-            side = ports(e["from"], e["to"])
-            if e.get("kind") == "described":
-                described += 1
-                doc.edge(doc.ids[e["from"]], doc.ids[e["to"]], e.get("label", ""), EDGE_DESCRIBED + side)
-            else:
-                doc.edge(doc.ids[e["from"]], doc.ids[e["to"]], e.get("label", ""), EDGE + side)
+    for e in drawn:
+        base = EDGE_DESCRIBED if e.get("kind") == "described" else EDGE
+        described += e.get("kind") == "described"
+        route = routes.get((e["from"], e["to"]))
+        if route is not None:
+            doc.edge(doc.ids[e["from"]], doc.ids[e["to"]], e.get("label", ""), _straight(base), route)
+        else:                     # no free route found: let draw.io route it
+            doc.edge(doc.ids[e["from"]], doc.ids[e["to"]], e.get("label", ""),
+                     base + ports(e["from"], e["to"]))
     others = sum(1 for n in resources if n["type"] == "other")
     notes = []
     if described:

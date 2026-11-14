@@ -48,6 +48,13 @@
           },
           "description": "Service prefixes normally left out as routine (for example kms, logs, ssm) to include anyway, only when the user asks for them."
         },
+        "only_services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Return ONLY these services, like [\"s3\"] or [\"lambda\",\"dynamodb\"]. Use whenever the user names specific services (for example: just S3, only my buckets). Nothing else is drawn, including VPCs and other resources."
+        },
         "include_connected": {
           "type": "boolean",
           "description": "With a tag or resource group filter, also draw untagged resources directly connected to the matches. Default false: only matching resources. Set true only when the user asks for connected resources."

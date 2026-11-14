@@ -25,7 +25,6 @@ from stream import newest_diagrams, parse_events, parse_s3_uri, strip_presigned_
 TOOL_LABELS = {
     "collect_inventory": "Reading the account (read-only)",
     "render_drawio": "Laying out the diagram",
-    "WebSearch": "Checking AWS documentation",
 }
 
 st.set_page_config(page_title="AWS account to draw.io", page_icon="🗺️", layout="centered")

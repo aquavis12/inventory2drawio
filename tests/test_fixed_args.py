@@ -56,6 +56,7 @@ seen, flows = [], []
 class FakeAgent:
     async def stream_async(self, prompt, invocation_state=None):
         seen.append(invocation_state["fixed_args"]); flows.append(invocation_state["has_flow"])
+        invocation_state["diagram_sink"].append({"drawio_s3_uri": "s3://b/k.drawio"})
         yield {"data": "Your diagram is ready."}
 a._tools = ["t"]; a._agents[(None, None)] = FakeAgent(); a._agents[("acme", None)] = FakeAgent()
 async def go(p): return [e async for e in a.invoke(p)]
@@ -66,5 +67,28 @@ assert flows == [False, False], flows
 asyncio.run(go({"prompt": "draw", "region": "us-east-1", "flow_notes": "1. site calls api"}))
 assert flows[-1] is True
 assert asyncio.run(go({"prompt": "draw"}))[0] == {"type": "error", "data": "Pick a Region in the sidebar first."}
+
+# A model that says "ready" without rendering is asked once more, then told off honestly.
+calls = {"liar-co": [], "late-co": []}
+class Liar:
+    async def stream_async(self, prompt, invocation_state=None):
+        calls["liar-co"].append(prompt[:12]); yield {"data": "Your diagram is ready."}
+class Late:
+    async def stream_async(self, prompt, invocation_state=None):
+        calls["late-co"].append(prompt[:12])
+        if prompt.startswith("You collected"):
+            invocation_state["diagram_sink"].append({"drawio_s3_uri": "s3://b/late.drawio"})
+            yield {"data": "Your diagram is ready. 13 resources drawn."}
+        else:
+            yield {"data": "Your diagram is ready."}
+a._agents[("liar-co", None)] = Liar(); a._agents[("late-co", None)] = Late()
+ev = asyncio.run(go({"prompt": "draw", "region": "us-east-1", "customer_id": "liar-co"}))
+assert len(calls["liar-co"]) == 2 and calls["liar-co"][1] == "You collecte", calls
+assert [e for e in ev if e["type"] == "text"] == [{"type": "text", "data": a.NOT_DRAWN}], ev
+assert not [e for e in ev if e["type"] == "diagram"]
+ev = asyncio.run(go({"prompt": "draw", "region": "us-east-1", "customer_id": "late-co"}))
+assert len(calls["late-co"]) == 2
+assert [e["data"] for e in ev if e["type"] == "text"] == ["Your diagram is ready. 13 resources drawn."], ev
+assert len([e for e in ev if e["type"] == "diagram"]) == 1
 assert "you never pass them" in a.SYSTEM_PROMPT and "omit it when" not in a.SYSTEM_PROMPT
 print("fixed args: all tests passed")

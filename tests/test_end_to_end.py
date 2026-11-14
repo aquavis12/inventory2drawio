@@ -1,4 +1,4 @@
-import io, json, os, sys, zipfile, xml.etree.ElementTree as ET
+import io, json, os, sys, tempfile, zipfile, xml.etree.ElementTree as ET
 os.environ.update(AWS_DEFAULT_REGION="us-east-1", AWS_ACCESS_KEY_ID="x", AWS_SECRET_ACCESS_KEY="x")
 import boto3
 from moto import mock_aws
@@ -10,8 +10,13 @@ import importlib.util
 _c = importlib.util.spec_from_file_location("collect", os.path.join(ROOT, "tools/collect_inventory/handler.py"))
 collect_mod = importlib.util.module_from_spec(_c); _c.loader.exec_module(collect_mod)
 collect_handler = collect_mod.lambda_handler
-spec = importlib.util.spec_from_file_location("parser", "/home/claude/diagram2tf/tools/parse_diagram/handler.py")
-parser = importlib.util.module_from_spec(spec); spec.loader.exec_module(parser)
+OUT = tempfile.mkdtemp(prefix="inv2drawio-")   # generated files go here, not into samples/
+# Optional round trip through an external diagram parser, if one is installed.
+PARSER = os.environ.get("DIAGRAM_PARSER", "/home/claude/diagram2tf/tools/parse_diagram/handler.py")
+parser = None
+if os.path.exists(PARSER):
+    spec = importlib.util.spec_from_file_location("parser", PARSER)
+    parser = importlib.util.module_from_spec(spec); spec.loader.exec_module(parser)
 
 R = "us-east-1"
 
@@ -137,9 +142,9 @@ with mock_aws():
     print("inventory  full:", full["summary"]["by_type"])
     print("inventory  App=orders + connected:", scoped["summary"]["nodes"], "nodes,", scoped["summary"]["edges"], "edges")
 
-    open(os.path.join(ROOT, "samples/orders_scoped.drawio"), "w").write(
-        build_drawio(scoped, title="orders (App=orders)", region="us-east-1"))
-    assert not check_geometry(open(os.path.join(ROOT, "samples/orders_scoped.drawio")).read())
+    scoped_path = os.path.join(OUT, "orders_scoped.drawio")
+    open(scoped_path, "w").write(build_drawio(scoped, title="orders (App=orders)", region="us-east-1"))
+    assert not check_geometry(open(scoped_path).read())
     real = open("/tmp/real_shape.drawio").read() if os.path.exists("/tmp/real_shape.drawio") else None
     assert real is None or not check_geometry(real), check_geometry(real)
     xml = build_drawio(full, title="orders", region="us-east-1")
@@ -147,13 +152,13 @@ with mock_aws():
     assert not problems, problems
     print("layout: no overlaps, every shape inside its parent")
 
-    back = parser.parse_drawio(xml)
-    print("round trip (Nov parser):", back["summary"]["by_type"])
-    print("  needs clarification:", [(c["label"].split("<")[0] if c["label"] else c["id"], c["icon"]) for c in back["needs_clarification"]])
-    print("  unmapped icons:", back["unmapped_icons"])
-    alb = next(r for r in back["resources"] if r["tf_type"] == "aws_lb")
-    assert any(w["kind"].startswith("group_vpc") for w in alb["within"])
-    os.makedirs(os.path.join(ROOT, "samples"), exist_ok=True)
-    open(os.path.join(ROOT, "samples/orders_account.drawio"), "w").write(xml)
-    open(os.path.join(ROOT, "samples/orders_inventory.json"), "w").write(json.dumps(full, indent=2, default=str))
+    if parser is not None:
+        back = parser.parse_drawio(xml)
+        print("round trip:", back["summary"]["by_type"])
+        alb = next(r for r in back["resources"] if r["tf_type"] == "aws_lb")
+        assert any(w["kind"].startswith("group_vpc") for w in alb["within"])
+    else:
+        print("round trip skipped: no external parser (set DIAGRAM_PARSER to enable)")
+    open(os.path.join(OUT, "orders_account.drawio"), "w").write(xml)
+    open(os.path.join(OUT, "orders_inventory.json"), "w").write(json.dumps(full, indent=2, default=str))
     print("end to end: all tests passed")

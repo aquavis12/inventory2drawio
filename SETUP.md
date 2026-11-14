@@ -28,7 +28,7 @@ A type the role may not list is skipped and named in the notes; the rest still w
 - [ ] Code: `tools/collect_inventory/handler.py`
 - [ ] Environment variable `WORK_BUCKET` = the bucket name
 - [ ] Role: `AWSLambdaBasicExecutionRole` + `tools/collect_inventory/iam-policy.json`
-      + `s3:PutObject` on `arn:aws:s3:::<bucket>/inventory/*` (customer access: see step 11)
+      + `s3:PutObject` on `arn:aws:s3:::<bucket>/inventory/*` (customer access: see step 9)
 
 ## 3. Lambda `inv2d-render-drawio`
 - [ ] Python 3.12, handler `handler.lambda_handler`, timeout 30 s, memory 256 MB
@@ -113,59 +113,7 @@ flow description, network only, serverless only, review risks, include routine s
 Pick one, check the filled-in text, click **Send this prompt**. They fill in the resource
 group, tag or VPC from the sidebar. Edit or add templates in `ui/templates.py`.
 
-## 9. Web Search tool (optional, about $7 per 1,000 searches)
-
-Lets the agent back its "Worth a look" notes with links to AWS documentation.
-Available in us-east-1, us-east-2, us-west-2, eu-west-1, ap-southeast-2, ap-northeast-1.
-
-- [ ] Add to the **Gateway service role** (`inv2d-gateway-role`):
-```json
-{"Effect": "Allow", "Action": "bedrock-agentcore:InvokeWebSearch",
- "Resource": "arn:aws:bedrock-agentcore:us-east-1:aws:tool/web-search.v1"}
-```
-- [ ] `pip install -U boto3` then `python scripts/add_web_search.py --gateway-id <gateway-id>`
-- [ ] Redeploy or start a new session so the agent lists the new tool
-
-The target only searches `docs.aws.amazon.com` and `aws.amazon.com`. That list lives on
-the target, hidden from the agent, so a prompt can't widen it. AWS's terms require you to
-show the source links with any answer that uses search results; the agent does this.
-
-## 10. Gateway Policy (Cedar)
-
-Controls what the agent may call, enforced at the Gateway, outside the model.
-
-| Policy | Allows |
-|---|---|
-| `collect_inventory` | Only your Runtime role, only in the Regions you approve |
-| `render_drawio` | Only your Runtime role |
-| `web_search` | Only your Runtime role, at most 5 results per search |
-
-Anything else is denied. Create all targets (steps 5 and 9) first.
-
-- [ ] Start in log-only mode:
-```bash
-python scripts/add_policy.py --gateway-id <gateway-id> \
-  --runtime-role-name <runtime-role-name> --allowed-regions us-east-1 --mode LOG_ONLY
-```
-- [ ] Run the agent once. In the Gateway's CloudWatch logs, confirm your three tool calls
-      show as allowed
-- [ ] Enforce:
-```bash
-python scripts/add_policy.py --gateway-id <gateway-id> --runtime-role-name <runtime-role-name> \
-  --engine-id <id-printed-by-the-first-run> --mode ENFORCE
-```
-- [ ] **Prove it works** (screenshot this for the article): ask the agent to draw a Region
-      that is not on your list, for example `eu-west-1`. The Gateway should deny the call
-      and the agent should say a policy blocked it.
-
-If you skip step 9, delete `policies/03_web_search.cedar` before running the script:
-policy creation fails on purpose when a policy names a tool that doesn't exist.
-
-**If log-only shows your calls as denied:** the principal pattern is the usual cause.
-Check the caller ARN in the log entry against
-`arn:aws:sts::<account>:assumed-role/<runtime-role-name>/*` and adjust the role name.
-
-## 11. Customers (profile + skill)
+## 9. Customers (profile + skill)
 
 Each customer is a folder in the work bucket:
 
@@ -197,7 +145,7 @@ the role itself and refuses Regions that aren't in `allowed_regions`. Templates 
 
 Your local identity needs `s3:ListBucket` and `s3:GetObject` on `customers/*` for the dropdown.
 
-## 12. AgentCore Memory (optional, works with any model)
+## 10. AgentCore Memory (optional, works with any model)
 
 Remembers conversations across sessions and learns per-customer preferences and facts.
 Memory is kept separately per customer: the customer ID is the memory's actor.
@@ -221,6 +169,40 @@ Memory stores conversation text, which here includes resource names. Treat the M
 the work bucket: same account, same access controls. Tool results (inventory, links) are
 not restored into later conversations.
 
+## Verify it works
+
+1. Collector: invoke it directly (README section 3). Expect `"ok": true`, a `summary.nodes`
+   count and a `findings` list.
+2. Scoping: in the UI ask "draw only my S3 buckets". The diagram must contain buckets and
+   nothing else. Ask "hi": the agent must answer in text with no "Reading the account" step.
+3. Tag scope: set tag `app` = your value. Only matching resources appear; untagged resources
+   wired to them appear only if you ask for connected ones, in a dashed "Connected, not in
+   scope" box.
+4. Download the `.drawio` and open it at app.diagrams.net. Names should wrap, not end in "...".
+5. Logs: CloudWatch shows `collect_inventory` then `render_drawio` for a drawing request,
+   and no tool calls for a greeting.
+
+## Clean up
+
+Delete in this order (replace the names and IDs with yours). Nothing was created in customer
+accounts except the read-only role, which `customers/customer-role.yaml` owns.
+
+```bash
+# AgentCore: runtime, gateway targets then gateway, memory, policy engine
+aws bedrock-agentcore-control delete-agent-runtime --agent-runtime-id <runtime-id>
+aws bedrock-agentcore-control delete-gateway-target --gateway-identifier <gateway-id> --target-id <target-id>
+aws bedrock-agentcore-control delete-gateway --gateway-identifier <gateway-id>
+aws bedrock-agentcore-control delete-memory --memory-id <memory-id>
+# Lambda functions
+aws lambda delete-function --function-name inv2d-collect-inventory
+aws lambda delete-function --function-name inv2d-render-drawio
+# Buckets (this deletes the inventories, diagrams and customer profiles in them)
+aws s3 rb s3://<work-bucket> --force
+aws s3 rb s3://<agent-code-bucket> --force
+# Roles: inv2d-gateway-role, the Lambda execution roles and the runtime role
+# Customer accounts: delete the CloudFormation stack that created inv2drawio-readonly
+```
+
 ## If something fails
 
 | Symptom | Likely cause |
@@ -231,9 +213,6 @@ not restored into later conversations.
 | Tool error mentioning WORK_BUCKET | Environment variable missing on a Lambda |
 | `ValidationException` on session ID | Session IDs must be 33+ characters; the UI handles this |
 | Model access or throttling error | Wrong `MODEL_ID`, or no access to that model in this Region |
-| Policy creation fails with validation findings | A tool name in a `.cedar` file doesn't match `<target>___<tool>`; target names must be `collect-inventory`, `render-drawio`, `web-search` |
-| Everything denied after ENFORCE | Role name in the principal pattern is wrong; switch back to LOG_ONLY and compare with the logged caller ARN |
-| Web search target fails to create | Gateway role lacks `bedrock-agentcore:InvokeWebSearch`, or the Region doesn't offer Web Search |
 | "unknown customer" | No `customers/<id>/profile.json`, or the collector role can't read it |
 | "could not assume the read-only role" | Role not deployed in the customer account, wrong external ID, or the trust policy names a different collector role |
 | "not approved for <customer>" | Region missing from `allowed_regions` in that customer's profile |
