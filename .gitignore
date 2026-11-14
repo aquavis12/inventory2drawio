@@ -10,3 +10,6 @@ customers/*/
 # local AWS / env files
 .env
 *.pem
+
+# working notes, not part of the repo
+docs/article-revision.md
