@@ -1,106 +1,81 @@
-# inventory2drawio: live AWS account to editable draw.io diagram
+# inventory2drawio
 
-AWS retired Workload Discovery on AWS (archived Aug 2026). This rebuilds its most
-useful part as agent tools: read a live account, draw an editable draw.io diagram.
+Draw the architecture that is actually running in an AWS account, as an editable draw.io
+file. A read-only agent on Amazon Bedrock AgentCore reads one Region, scopes it by tag or
+resource group, adds the request flow you describe in Markdown, and hands back a `.drawio`
+file. Nothing is created, changed or invented in the account.
 
-| Tool | Does | Notes |
-|---|---|---|
-| `collect_inventory` | Region inventory as a graph: VPC > AZ > subnet placement, ALB to targets, SQS/DynamoDB triggers to Lambda | Read-only. Saves the full graph to S3, returns a compact view to the agent |
-| `render_drawio` | Graph to draw.io XML with official AWS icons, deterministic layout | Writes to S3, returns a 1-hour download link |
+In a real run: about 12 seconds per diagram, under a fifth of a cent in model cost.
 
-## Design decisions (good article material)
+## How it works
 
-- **Public vs private comes from route tables, not names.** A subnet is public only if its
-  route table sends 0.0.0.0/0 to an internet gateway. The test includes a subnet named
-  `public-trap` with no such route; it is correctly drawn as private.
-- **Layout is code.** Models are bad at coordinates. The generator measures bottom-up,
-  draws top-down, and a test checks that nothing overlaps or spills out of its parent.
-- **Tag filters keep context.** Scoping to `App=orders` keeps untagged resources that are
-  directly connected (the queue triggering a tagged function, the ALB in front of tagged
-  instances) and each kept VPC's internet and NAT gateways. Without this, the first
-  version returned the right resources with zero connections.
-- **The agent gets 820 bytes, not 30K tokens.** The full graph stays in S3.
-- **Round trip with November's parser.** The generated diagram parses back to the same
-  resource types, which is the shared piece for the diagram to Terraform round-trip check.
+| Piece | What it does |
+| --- | --- |
+| `ui/` | Streamlit app: pick customer, Region and scope, upload a flow file, use prompt templates, download the diagram |
+| `agent/` | Strands agent on AgentCore Runtime. Decides scope and writes the explanation. Customer and Region are injected by code, never chosen by the model |
+| `tools/collect_inventory/` | Lambda behind AgentCore Gateway. Read-only. Finds resources (Resource Explorer if on, otherwise Cloud Control and the tagging API), adds connections, leaves out plumbing, scopes strictly |
+| `tools/render_drawio/` | Lambda behind AgentCore Gateway. Lays out Region, VPC, AZ, subnets and a left-to-right flow with official AWS icons. Draws links from the flow file only between resources that exist |
+| `customers/` | Per-customer `profile.json` (access, read by the Lambda only) and `skill.md` (guidance for the agent), plus a CloudFormation template for the read-only role in each customer account |
+| `policies/`, `scripts/` | Optional: AgentCore Web Search limited to AWS documentation, and Cedar policies for the Gateway |
 
-## 1. Run the tests
+The rule behind the design: **code decides, the model explains.** Inventory, layout,
+customer and Region, download links and flow links are all handled in code; the model
+picks the scope and explains the result.
 
-```bash
-pip install "moto[ec2,elbv2,rds,awslambda,s3,dynamodb,sqs,iam,apigateway,apigatewayv2,cloudfront,route53,resourcegroups,sts]==5.0.28" boto3
-python tests/test_end_to_end.py   # mock account, collect, layout checks, round trip
-python tests/test_s3_flow.py      # collector -> S3 -> renderer
-```
+## Key behaviours
 
-Open `samples/orders_scoped.drawio` in https://app.diagrams.net to see the real output.
-**Check the icons render** (not grey boxes): this is the one thing the tests can't verify.
+- **Public subnets come from route tables, not names.** A subnet is public only if its route
+  table sends `0.0.0.0/0` to an internet gateway.
+- **Strict scope.** With a tag or resource group, only matching resources are drawn, plus the
+  VPC and subnet boxes they sit in. Untagged neighbours are counted in the notes and can be
+  added on request.
+- **Connections** come from APIs (API Gateway integrations and authorizers, CloudFront origins
+  and certificates, event sources, SNS subscriptions, load balancer targets) and from Lambda
+  environment variables that exactly match a table, bucket, queue or topic. Values are
+  compared in memory, never stored or returned.
+- **Plumbing is left out by default**: IAM, logs, task-definition revisions, sub-resources and
+  resources AWS created for you. Ask for a service to include it.
+- **Small agent context.** The full graph stays in S3; the agent sees a compact summary.
+- **Read-only everywhere.** The only writes go to your own work bucket.
 
-## 2. Deploy
+## Get started
 
-```bash
-export AWS_REGION=us-east-1
-BUCKET=inv2drawio-work-<ACCOUNT_ID>
-aws s3api create-bucket --bucket $BUCKET
-aws s3api put-public-access-block --bucket $BUCKET --public-access-block-configuration \
-  BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-# Inventory data describes your network: expire it after 7 days.
-aws s3api put-bucket-lifecycle-configuration --bucket $BUCKET --lifecycle-configuration \
-  '{"Rules":[{"ID":"expire","Status":"Enabled","Filter":{"Prefix":""},"Expiration":{"Days":7}}]}'
+1. Run the tests (no AWS account needed):
 
-(cd tools/collect_inventory && zip -j ../../collect.zip handler.py)
-(cd tools/render_drawio && zip -j ../../render.zip handler.py generator.py)
+   ```bash
+   pip install "moto[ec2,elbv2,rds,awslambda,s3,dynamodb,sqs,iam,apigateway,apigatewayv2,cloudfront,route53,resourcegroups,sts,secretsmanager,resourcegroupstaggingapi,sns,cognitoidp,acm]==5.0.28" boto3
+   for t in tests/test_*.py; do python "$t"; done
+   ```
 
-aws lambda create-function --function-name inv2d-collect-inventory --runtime python3.12 \
-  --handler handler.lambda_handler --zip-file fileb://collect.zip --timeout 120 --memory-size 512 \
-  --environment Variables={WORK_BUCKET=$BUCKET} --role <collect-role-arn>
-aws lambda create-function --function-name inv2d-render-drawio --runtime python3.12 \
-  --handler handler.lambda_handler --zip-file fileb://render.zip --timeout 30 --memory-size 256 \
-  --environment Variables={WORK_BUCKET=$BUCKET} --role <render-role-arn>
-```
+   `tests/test_flow.py`, `test_fixed_args.py` and `test_scripts.py` also need the packages in
+   `agent/requirements.txt`.
 
-Roles (both also need `AWSLambdaBasicExecutionRole`):
-- **collect:** `tools/collect_inventory/iam-policy.json` (read-only) plus `s3:PutObject` on `$BUCKET/inventory/*`
-- **render:** `s3:GetObject` on `$BUCKET/inventory/*` and `s3:PutObject`, `s3:GetObject` on `$BUCKET/diagrams/*`
+2. Open `samples/orders_scoped.drawio` at [app.diagrams.net](https://app.diagrams.net) to see
+   the output format.
 
-## 3. Try it on a real account
+3. Deploy by following **[SETUP.md](SETUP.md)**: a work bucket, two Lambda functions, an
+   AgentCore Gateway, the agent on AgentCore Runtime (from a code zip; build it with
+   `scripts/build_agent_zip.sh`), optional AgentCore Memory, and the Streamlit UI.
 
-```bash
-aws lambda invoke --function-name inv2d-collect-inventory --cli-binary-format raw-in-base64-out \
-  --payload '{"region":"us-east-1","tag_filter":{"key":"App","value":"orders"}}' out.json && cat out.json
-# copy graph_s3_uri from out.json:
-aws lambda invoke --function-name inv2d-render-drawio --cli-binary-format raw-in-base64-out \
-  --payload '{"graph_s3_uri":"s3://...","title":"Orders"}' out2.json && cat out2.json
-```
+4. To draw another AWS account, deploy `customers/customer-role.yaml` there and add the
+   customer's `profile.json` and `skill.md` to the work bucket. Nothing else is installed in
+   that account.
 
-Open `download_url` in a browser, then open the file in draw.io.
+## Getting good diagrams
 
-## Known limits (state them in the article)
+- Tag your workloads (`app=lms`) or put them in a resource group.
+- Describe the request flow once in Markdown (`samples/lms_flow_example.md`) and reuse it.
+- Expect a small touch-up in draw.io: it's a real, editable file.
+- Ask precisely, or start from a template.
 
-- One Region per call, plus global CloudFront and Route 53. S3 buckets are drawn only if
-  they are in that Region.
-- Covered: VPC, subnets, IGW, NAT, EC2, ALB/NLB + targets, RDS instances, Lambda + event
-  sources, API Gateway (HTTP and REST) + Lambda integrations, DynamoDB, SQS, S3,
-  CloudFront + origins, Route 53 zones. Not yet: ECS/EKS, Aurora clusters, security
-  group rules, VPC peering, Transit Gateway, Route 53 record targets.
-- Resource groups are drawn as boxes for resources outside a VPC. Resources inside a VPC
-  stay in their subnet. A resource in several groups is drawn in the first by name.
-- moto has not implemented `ListGroupResources`, so resource-group reading is untested
-  against a mock; the matching logic is unit-tested.
-- Tests run on moto, a mock of AWS. Real accounts will surface cases it doesn't model.
+## Limits
 
-## The agent and UI
+- One Region per run, plus global CloudFront and Route 53.
+- Resources found through discovery but without a dedicated connection reader are drawn
+  without lines; the legend says how many.
+- Security groups, IAM policies and encryption settings aren't read.
+- Tests run against moto, a mock of AWS; real accounts can surface cases it doesn't model.
 
-- `agent/agent.py`: Strands agent for AgentCore Runtime. Reaches the tools through
-  AgentCore Gateway with IAM (SigV4) auth, streams tool activity and the answer.
-- `ui/app.py`: Streamlit chat UI that calls the Runtime and shows a download button.
-- `scripts/add_web_search.py`: adds AgentCore Web Search, limited to AWS's own sites.
-- `scripts/add_policy.py` + `policies/*.cedar`: Gateway Policy. Only the Runtime role may
-  call the tools, inventory only in approved Regions, web search capped at 5 results.
-- `customers/`: per-customer `profile.json` (access, Lambda only) and `skill.md` (guidance
-  for the agent), plus the CloudFormation template for the customer-side read-only role.
-- **`SETUP.md`: the manual setup checklist, start there.**
+## License
 
-```bash
-python tests/test_ui_stream.py    # UI stream parser
-python tests/test_scripts.py      # setup scripts vs the AWS API model (needs boto3 >= 1.44)
-python tests/test_customers.py    # two customers, two accounts: isolation + new services
-```
+MIT
