@@ -1,0 +1,7 @@
+{
+  "name": "Acme Retail",
+  "account_id": "111122223333",
+  "role_arn": "arn:aws:iam::111122223333:role/inv2drawio-readonly",
+  "external_id": "REPLACE-with-a-long-random-string",
+  "allowed_regions": ["me-central-1", "us-east-1"]
+}

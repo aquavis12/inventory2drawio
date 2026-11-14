@@ -1,0 +1,54 @@
+[
+  {
+    "name": "render_drawio",
+    "description": "Draw an editable draw.io architecture diagram from a graph that collect_inventory saved. Layout (Region, VPC, Availability Zone, subnets, then a left-to-right flow for everything else) is automatic, and an empty default VPC is hidden automatically. Use hide_ids to leave out resources that are not part of the workload. Use connections to add links from the customer's flow description: both ends must be node ids returned by collect_inventory; anything else is rejected and reported.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "graph_s3_uri": {
+          "type": "string",
+          "description": "The graph_s3_uri returned by collect_inventory."
+        },
+        "title": {
+          "type": "string",
+          "description": "Diagram title, like 'Orders service, production'."
+        },
+        "hide_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Node ids from collect_inventory to leave out."
+        },
+        "connections": {
+          "type": "array",
+          "description": "Links from the flow description, drawn as dashed labelled lines.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Node id from collect_inventory where the step starts."
+              },
+              "to": {
+                "type": "string",
+                "description": "Node id from collect_inventory where the step ends."
+              },
+              "label": {
+                "type": "string",
+                "description": "Short verb phrase, at most 4 words, like 'sends request'."
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ]
+          }
+        }
+      },
+      "required": [
+        "graph_s3_uri"
+      ]
+    }
+  }
+]

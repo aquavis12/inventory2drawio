@@ -1,0 +1,449 @@
+{
+  "ok": true,
+  "nodes": [
+    {
+      "id": "vpc-c80899e82088c2660",
+      "type": "vpc",
+      "name": "orders-vpc",
+      "cidr": "10.0.0.0/16",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-c80899e82088c2660",
+      "is_default": false,
+      "tags": {
+        "Name": "orders-vpc",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "vpc-bc26be6e940bbba40",
+      "type": "vpc",
+      "name": "billing-vpc",
+      "cidr": "10.9.0.0/16",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-bc26be6e940bbba40",
+      "is_default": false,
+      "tags": {
+        "Name": "billing-vpc",
+        "App": "billing"
+      }
+    },
+    {
+      "id": "subnet-1cd1437bb05097f3a",
+      "type": "subnet",
+      "name": "public-a",
+      "vpc": "vpc-c80899e82088c2660",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-1cd1437bb05097f3a",
+      "az": "us-east-1a",
+      "cidr": "10.0.0.0/24",
+      "public": true,
+      "tags": {
+        "Name": "public-a",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "subnet-bf899f1a7969d90d7",
+      "type": "subnet",
+      "name": "private-a",
+      "vpc": "vpc-c80899e82088c2660",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-bf899f1a7969d90d7",
+      "az": "us-east-1a",
+      "cidr": "10.0.10.0/24",
+      "public": false,
+      "tags": {
+        "Name": "private-a",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "subnet-f4bac624374047432",
+      "type": "subnet",
+      "name": "public-trap",
+      "vpc": "vpc-c80899e82088c2660",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-f4bac624374047432",
+      "az": "us-east-1a",
+      "cidr": "10.0.20.0/24",
+      "public": false,
+      "tags": {
+        "Name": "public-trap",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "subnet-f30c6330d1e5ff5f1",
+      "type": "subnet",
+      "name": "subnet-f30c6330d1e5ff5f1",
+      "vpc": "vpc-bc26be6e940bbba40",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-f30c6330d1e5ff5f1",
+      "az": "us-east-1a",
+      "cidr": "10.9.0.0/24",
+      "public": false,
+      "tags": {}
+    },
+    {
+      "id": "subnet-3f7b50b8261df5992",
+      "type": "subnet",
+      "name": "public-b",
+      "vpc": "vpc-c80899e82088c2660",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-3f7b50b8261df5992",
+      "az": "us-east-1b",
+      "cidr": "10.0.1.0/24",
+      "public": true,
+      "tags": {
+        "Name": "public-b",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "subnet-3208466cb63390c68",
+      "type": "subnet",
+      "name": "private-b",
+      "vpc": "vpc-c80899e82088c2660",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-3208466cb63390c68",
+      "az": "us-east-1b",
+      "cidr": "10.0.11.0/24",
+      "public": false,
+      "tags": {
+        "Name": "private-b",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "igw-655dd7bc8c0ed665e",
+      "type": "internet_gateway",
+      "name": "igw-655dd7bc8c0ed665e",
+      "vpc": "vpc-c80899e82088c2660",
+      "tags": {},
+      "arn": null
+    },
+    {
+      "id": "nat-1b9b880150a7fb403",
+      "type": "nat_gateway",
+      "name": "nat-a",
+      "vpc": "vpc-c80899e82088c2660",
+      "subnet": "subnet-1cd1437bb05097f3a",
+      "tags": {
+        "Name": "nat-a",
+        "App": "orders"
+      },
+      "arn": null
+    },
+    {
+      "id": "i-ea93253fe29035948",
+      "type": "ec2_instance",
+      "name": "api-1",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:instance/i-ea93253fe29035948",
+      "vpc": "vpc-c80899e82088c2660",
+      "subnet": "subnet-bf899f1a7969d90d7",
+      "detail": "t3.small",
+      "state": "running",
+      "tags": {
+        "Name": "api-1",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "i-1fc5d7bfc9f343afa",
+      "type": "ec2_instance",
+      "name": "api-2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:instance/i-1fc5d7bfc9f343afa",
+      "vpc": "vpc-c80899e82088c2660",
+      "subnet": "subnet-3208466cb63390c68",
+      "detail": "t3.small",
+      "state": "running",
+      "tags": {
+        "Name": "api-2",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "i-f2186f141329e8bdb",
+      "type": "ec2_instance",
+      "name": "batch-worker",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:instance/i-f2186f141329e8bdb",
+      "vpc": "vpc-c80899e82088c2660",
+      "subnet": "subnet-f4bac624374047432",
+      "detail": "t3.small",
+      "state": "running",
+      "tags": {
+        "Name": "batch-worker",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "i-42ebff148974f6ef4",
+      "type": "ec2_instance",
+      "name": "billing-1",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:instance/i-42ebff148974f6ef4",
+      "vpc": "vpc-bc26be6e940bbba40",
+      "subnet": "subnet-f30c6330d1e5ff5f1",
+      "detail": "t3.small",
+      "state": "running",
+      "tags": {
+        "Name": "billing-1",
+        "App": "billing"
+      }
+    },
+    {
+      "id": "arn:aws:lambda:us-east-1:123456789012:function:order-worker",
+      "type": "lambda_function",
+      "name": "order-worker",
+      "vpc": null,
+      "subnet": "subnet-bf899f1a7969d90d7",
+      "detail": "python3.12",
+      "tags": {},
+      "arn": "arn:aws:lambda:us-east-1:123456789012:function:order-worker"
+    },
+    {
+      "id": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/orders-alb/50dc6c495c0c9188",
+      "type": "load_balancer",
+      "name": "orders-alb",
+      "vpc": "vpc-c80899e82088c2660",
+      "subnets": [
+        "subnet-1cd1437bb05097f3a",
+        "subnet-3f7b50b8261df5992"
+      ],
+      "detail": "application",
+      "scheme": "None",
+      "tags": {},
+      "arn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/orders-alb/50dc6c495c0c9188"
+    },
+    {
+      "id": "arn:aws:rds:us-east-1:123456789012:db:orders-db",
+      "type": "rds_instance",
+      "name": "orders-db",
+      "vpc": "vpc-c80899e82088c2660",
+      "subnet": "subnet-bf899f1a7969d90d7",
+      "az": "us-east-1a",
+      "detail": "postgres db.t4g.micro",
+      "multi_az": false,
+      "tags": {
+        "App": "orders"
+      },
+      "arn": "arn:aws:rds:us-east-1:123456789012:db:orders-db"
+    },
+    {
+      "id": "dynamodb:orders",
+      "type": "dynamodb_table",
+      "name": "orders",
+      "tags": {},
+      "arn": "arn:aws:dynamodb:us-east-1:123456789012:table/orders"
+    },
+    {
+      "id": "arn:aws:sqs:us-east-1:123456789012:orders-queue",
+      "type": "sqs_queue",
+      "name": "orders-queue",
+      "tags": {},
+      "url": "https://sqs.us-east-1.amazonaws.com/123456789012/orders-queue",
+      "arn": "arn:aws:sqs:us-east-1:123456789012:orders-queue"
+    },
+    {
+      "id": "s3:orders-assets",
+      "type": "s3_bucket",
+      "name": "orders-assets",
+      "arn": "arn:aws:s3:::orders-assets",
+      "tags": {}
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-ea93253fe29035948",
+      "type": "other",
+      "name": "api-1",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-ea93253fe29035948",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "api-1",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-1fc5d7bfc9f343afa",
+      "type": "other",
+      "name": "api-2",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-1fc5d7bfc9f343afa",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "api-2",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-f2186f141329e8bdb",
+      "type": "other",
+      "name": "batch-worker",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-f2186f141329e8bdb",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "batch-worker",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-42ebff148974f6ef4",
+      "type": "other",
+      "name": "billing-1",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:instance/i-42ebff148974f6ef4",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "billing-1",
+        "App": "billing"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:vpc/vpc-c80899e82088c2660",
+      "type": "other",
+      "name": "orders-vpc",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:vpc/vpc-c80899e82088c2660",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "orders-vpc",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:vpc/vpc-bc26be6e940bbba40",
+      "type": "other",
+      "name": "billing-vpc",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:vpc/vpc-bc26be6e940bbba40",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "billing-vpc",
+        "App": "billing"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-1cd1437bb05097f3a",
+      "type": "other",
+      "name": "public-a",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-1cd1437bb05097f3a",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "public-a",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-bf899f1a7969d90d7",
+      "type": "other",
+      "name": "private-a",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-bf899f1a7969d90d7",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "private-a",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-f4bac624374047432",
+      "type": "other",
+      "name": "public-trap",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-f4bac624374047432",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "public-trap",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-3f7b50b8261df5992",
+      "type": "other",
+      "name": "public-b",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-3f7b50b8261df5992",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "public-b",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-3208466cb63390c68",
+      "type": "other",
+      "name": "private-b",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:subnet/subnet-3208466cb63390c68",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "private-b",
+        "App": "orders"
+      }
+    },
+    {
+      "id": "arn:aws:ec2:us-east-1:123456789012:ec2:natgateway/nat-1b9b880150a7fb403",
+      "type": "other",
+      "name": "nat-a",
+      "service": "ec2",
+      "resource_type": "ec2",
+      "arn": "arn:aws:ec2:us-east-1:123456789012:ec2:natgateway/nat-1b9b880150a7fb403",
+      "detail": "ec2 ec2",
+      "tags": {
+        "Name": "nat-a",
+        "App": "orders"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "arn:aws:sqs:us-east-1:123456789012:orders-queue",
+      "to": "arn:aws:lambda:us-east-1:123456789012:function:order-worker",
+      "kind": "triggers"
+    },
+    {
+      "from": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/orders-alb/50dc6c495c0c9188",
+      "to": "i-ea93253fe29035948",
+      "kind": "routes_to",
+      "label": "HTTP:8080"
+    },
+    {
+      "from": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/orders-alb/50dc6c495c0c9188",
+      "to": "i-1fc5d7bfc9f343afa",
+      "kind": "routes_to",
+      "label": "HTTP:8080"
+    }
+  ],
+  "notes": [
+    "Cloud Control could not list 29 types (404): SecretsManager::Secret, StepFunctions::StateMachine, ECS::Cluster, EKS::Cluster, ECR::Repository, Events::EventBus...",
+    "Discovery via Cloud Control (0 of 29 types) and the tagging API (Resource Explorer is off: ClientError): 12 more resources drawn without connections; 1 routine resources (IAM, logs, task-definition revisions, AWS-managed rules, sub-resources, ...) left out."
+  ],
+  "summary": {
+    "nodes": 32,
+    "edges": 3,
+    "truncated": false,
+    "by_type": {
+      "dynamodb_table": 1,
+      "ec2_instance": 4,
+      "internet_gateway": 1,
+      "lambda_function": 1,
+      "load_balancer": 1,
+      "nat_gateway": 1,
+      "other": 12,
+      "rds_instance": 1,
+      "s3_bucket": 1,
+      "sqs_queue": 1,
+      "subnet": 6,
+      "vpc": 2
+    }
+  },
+  "region": "us-east-1",
+  "customer": {
+    "id": "own-account",
+    "name": "This account"
+  }
+}

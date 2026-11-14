@@ -1,0 +1,12 @@
+# build output: rebuild with scripts/build_agent_zip.sh and the zip steps in SETUP.md
+*.zip
+build/
+.venv/
+__pycache__/
+*.pyc
+# never commit real customer config
+customers/*/
+!customers/example-acme/
+# local AWS / env files
+.env
+*.pem

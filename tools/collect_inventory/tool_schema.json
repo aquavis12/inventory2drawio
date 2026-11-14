@@ -1,0 +1,61 @@
+[
+  {
+    "name": "collect_inventory",
+    "description": "Read the live resources of one AWS Region of one customer account (read-only) and return a graph: VPCs, subnets (public means routed to an internet gateway), gateways, EC2, load balancers with targets, RDS, Lambda with triggers, API Gateway with its Lambda integrations and Cognito authorizers, DynamoDB, SQS, SNS with subscriptions, Cognito user pools, ACM certificates, S3 buckets in that Region, plus global CloudFront and Route 53, and each resource's AWS resource group. Pass the customer_id and region exactly as selected in the UI. Use tag_filter, resource_group or vpc_ids to scope to one application; tag matching ignores letter case. Connections include API Gateway to Lambda, CloudFront to origins, event sources to Lambda, and Lambda to the tables, buckets and queues named in its configuration. If summary.truncated is true, narrow the scope and call again. Everything else in the Region is discovered too (Resource Explorer) and returned with type 'other' and its service name; those resources have no connections.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "customer_id": {
+          "type": "string",
+          "description": "Customer identifier selected in the UI, like acme-retail. Never invent or change it."
+        },
+        "region": {
+          "type": "string",
+          "description": "AWS Region, like us-east-1 or me-central-1."
+        },
+        "tag_filter": {
+          "type": "object",
+          "description": "Only resources that carry this tag (plus the VPC and subnet boxes they sit in). Key and value match regardless of letter case.",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "Tag key, like App"
+            },
+            "value": {
+              "type": "string",
+              "description": "Tag value, like orders. Omit to match any value."
+            }
+          },
+          "required": [
+            "key"
+          ]
+        },
+        "vpc_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Only these VPCs, like vpc-0abc."
+        },
+        "resource_group": {
+          "type": "string",
+          "description": "Only resources in this AWS resource group (plus the VPC and subnet boxes they sit in)."
+        },
+        "include_services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Service prefixes normally left out as routine (for example kms, logs, ssm) to include anyway, only when the user asks for them."
+        },
+        "include_connected": {
+          "type": "boolean",
+          "description": "With a tag or resource group filter, also draw untagged resources directly connected to the matches. Default false: only matching resources. Set true only when the user asks for connected resources."
+        }
+      },
+      "required": [
+        "region"
+      ]
+    }
+  }
+]

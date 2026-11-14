@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Read-only role that lets the inventory2drawio collector describe this account.
+  Deploy in the CUSTOMER account. It grants Describe/List access only.
+Parameters:
+  CollectorRoleArn:
+    Type: String
+    Description: ARN of the collector Lambda's execution role in the tooling account
+    AllowedPattern: "^arn:aws:iam::[0-9]{12}:role/.+$"
+  ExternalId:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Same value as external_id in this customer's profile.json
+Resources:
+  ReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: inv2drawio-readonly   # the collector only assumes a role with this exact name
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref CollectorRoleArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+      Policies:
+        - PolicyName: read-inventory
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Resource: "*"
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeNatGateways
+                  - ec2:DescribeInstances
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:DescribeTargetHealth
+                  - elasticloadbalancing:DescribeTags
+                  - rds:DescribeDBInstances
+                  - lambda:ListFunctions
+                  - lambda:ListEventSourceMappings
+                  - lambda:ListTags
+                  - dynamodb:ListTables
+                  - dynamodb:DescribeTable
+                  - dynamodb:ListTagsOfResource
+                  - sqs:ListQueues
+                  - sqs:GetQueueAttributes
+                  - sqs:ListQueueTags
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketTagging
+                  - s3:GetBucketLocation
+                  - apigateway:GET
+                  - cloudfront:ListDistributions
+                  - route53:ListHostedZones
+                  - resource-groups:ListGroups
+                  - resource-groups:ListGroupResources
+                  - tag:GetResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ListStackResources
+                  - cloudfront:ListTagsForResource
+                  - sns:ListTopics
+                  - sns:ListTagsForResource
+                  - sns:ListSubscriptionsByTopic
+                  - cognito-idp:ListUserPools
+                  - cognito-idp:ListTagsForResource
+                  - acm:ListCertificates
+                  - acm:ListTagsForCertificate
+                  - resource-explorer-2:ListResources
+                  - resource-explorer-2:GetDefaultView
+                  - cloudformation:ListResources
+                  - cloudformation:ListStacks
+                  - secretsmanager:ListSecrets
+                  - states:ListStateMachines
+                  - ecs:ListClusters
+                  - ecs:DescribeClusters
+                  - eks:ListClusters
+                  - ecr:DescribeRepositories
+                  - events:ListEventBuses
+                  - events:ListRules
+                  - scheduler:ListSchedules
+                  - kinesis:ListStreams
+                  - firehose:ListDeliveryStreams
+                  - elasticache:DescribeServerlessCaches
+                  - redshift:DescribeClusters
+                  - es:ListDomainNames
+                  - elasticfilesystem:DescribeFileSystems
+                  - backup:ListBackupVaults
+                  - appsync:ListGraphqlApis
+                  - amplify:ListApps
+                  - apprunner:ListServices
+                  - batch:DescribeComputeEnvironments
+                  - wafv2:ListWebACLs
+                  - sagemaker:ListEndpoints
+                  - bedrock:ListAgents
+                  - bedrock:ListKnowledgeBases
+                  - codebuild:ListProjects
+                  - ec2:DescribeTransitGateways
+                  - ec2:DescribeVpcEndpoints
+                  - ec2:DescribeVpcPeeringConnections
+                  - rds:DescribeDBClusters
+                  - mq:ListBrokers
+Outputs:
+  RoleArn:
+    Value: !GetAtt ReadOnlyRole.Arn
